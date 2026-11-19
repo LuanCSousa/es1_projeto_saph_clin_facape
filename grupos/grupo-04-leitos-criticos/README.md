@@ -1,112 +1,69 @@
-# G04 — Leitos Críticos e Reserva
+# G4 — Leitos Críticos e Reserva (M3 · Recursos críticos)
 
-> Grupo responsável pelo subprocesso **Oferta, reserva, bloqueio e liberação de leitos críticos** do SAPH-Clin.
-> Módulo: M3 — Gestão de Recursos Críticos e Estoque Finitivo
+**Projeto:** SAPH-Clin · Engenharia de Software I · FACAPE 2026.2
+**Integrantes:** Luan Carlos de Sousa, José Guilherme de Souza Costa Alencar, Kerlon de Moura Marinho
+**Estado atual:** M1 v1.0 — escopo, requisitos e casos de uso
 
-## Integrantes
+---
 
-| Nome | Matrícula | Papel no grupo |
-| --- | --- | --- |
-| *preencher* | | requisitos |
-| *preencher* | | modelagem estrutural |
-| *preencher* | | modelagem comportamental |
-| *preencher* | | testes e rastreabilidade |
+## E1 · Visão e Escopo do Módulo
 
-## Escopo do módulo (E1)
+### Problema que o módulo resolve
+Hoje a equipe do hospital só descobre que há um paciente crítico a caminho quando ele chega. O leito não é separado a tempo, o que atrasa a abertura de leito crítico. O módulo G4 mantém o **estado confiável de cada leito crítico** (Sala Vermelha e Observação) e **reserva um leito para o chamado antes da chegada**, avisando a equipe receptora.
 
-- **Subprocesso:** Oferta, reserva, bloqueio e liberação de leitos críticos.
-- **Atores envolvidos:** MedicoRegulador, EquipeReceptora.
-- **Entidades de domínio (donas do módulo):** `Leito`, `Setor` (Sala Vermelha, Observação), `ReservaLeito`, `Higienizacao`, `AlertaTransferencia`.
-- **Entrada:** Contrato C3 `pedido_pre_admissao` (G3).
-- **Saída:** Reserva ativa + alerta à equipe receptora.
+### Onde começa e onde termina
+| | |
+|---|---|
+| **Começa** | quando o G3 envia o pedido de pré-admissão (`PreAdmissao`) com `chamado_id` e a prioridade clínica definida pelo G1 |
+| **Termina** | quando o leito foi ocupado pelo paciente e, depois da alta, higienizado e devolvido ao estado Vago (ou bloqueado com motivo) |
 
-### Fora do escopo do grupo
+### Contrato do módulo
+| Direção | Conteúdo | Com quem |
+|---|---|---|
+| Entrada | `PreAdmissao` (`chamado_id`, prioridade, setor requerido) | G3 |
+| Saída | Resposta "leito reservado" (`leito_id`, setor, `expira_em`) ou "leito negado" (motivo) | G3 / MedicoRegulador |
+| Saída | `AlertaTransferencia` (`chamado_id`, prioridade, setor, leito) | EquipeReceptora |
+| Saída | Evento por transição de estado de leito e de reserva | G6 |
 
-- decidir prioridade clínica (G1).
-- preencher ficha pré-hospitalar (G3).
-- controlar insumos da maleta (G5).
+### Dentro do escopo
+- Cadastro lógico de `Leito` e `Setor` (Sala Vermelha, Observação) e seus estados
+- Consulta de disponibilidade; reserva, cancelamento e expiração de reserva
+- Aceite do paciente (ocupação), liberação e ciclo de higienização
+- Bloqueio e desbloqueio de leito com motivo
+- Alerta à equipe receptora; emissão de eventos ao G6
 
-> Se algo do escopo acima for necessário, consuma o **contrato** descrito em
-> `docs/arquitetura-modular.md` — não modele a entidade do vizinho.
+### Fora do escopo
+- Prontuário hospitalar definitivo e faturamento
+- Cálculo ou alteração da prioridade clínica (é do **G1**)
+- Escolha de viatura e deslocamento (**G2**); ficha pré-hospitalar (**G3**)
+- Estoque e fármacos controlados (**G5**)
+- Trilha de auditoria própria (o G4 só **emite** eventos; a trilha é do **G6**)
+- Gestão de leitos comuns/enfermaria (só leitos críticos)
 
-## Casos de uso esperados (E3)
+### Premissas adotadas
+- **P1.** O hospital tem dois setores críticos: Sala Vermelha e Observação.
+- **P2.** O `chamado_id` pertence ao G1; o G4 só o referencia.
+- **P3.** A `PreAdmissao` chega com prioridade já definida; o G4 não a recalcula.
+- **P4.** O prazo de expiração da reserva é parametrizável (valor inicial proposto: 15 min, a validar em `ADR-G04-01`).
+- **P5.** A autenticação e os perfis de usuário são providos pelo hospital; o G4 só os consome.
+- **P6.** A equipe de higienização não consta no glossário; no M1 suas ações são feitas pela `EquipeReceptora` (decisão a registrar em ADR).
 
-- UC-G04-01 Consultar Disponibilidade de Leitos
-- UC-G04-02 Reservar Leito (`<<include>>` Verificar Conflito de Reserva)
-- UC-G04-03 Bloquear Leito por Motivo Sanitário
-- UC-G04-04 Liberar Leito após Alta/Higienização
-- UC-G04-05 Cancelar Reserva Expirada
-
-Use `docs/templates/caso-de-uso.md`. Mínimo: 4 casos de uso, sendo 2
-especificados textualmente e pelo menos um `<<include>>` e um `<<extend>>`
-justificados.
-
-## Requisitos âncora (ponto de partida, não de chegada)
-
-| ID | Requisito funcional | Caso de uso |
-| --- | --- | --- |
-| RF-G04-01 | Manter estado explícito de cada leito (vago, reservado, ocupado, em higienização, bloqueado) | UC-G04-01 |
-| RF-G04-02 | Reservar leito vinculado ao chamado e ao prontuário | UC-G04-02 |
-| RF-G04-03 | Impedir duas reservas ativas no mesmo leito (RN-05) | UC-G04-02 |
-| RF-G04-04 | Expirar reserva não confirmada após o prazo do ETA | UC-G04-05 |
-| RF-G04-05 | Bloquear leito com motivo obrigatório e autor | UC-G04-03 |
-| RF-G04-06 | Não ofertar leito em higienização ou bloqueado (RN-06) | UC-G04-01 |
-| RF-G04-07 | Alertar equipe receptora no aceite da reserva | UC-G04-02 |
-| RF-G04-08 | Publicar eventos `LEITO_RESERVADO` e `LEITO_NEGADO` | UC-G04-02 |
-
-| ID | Requisito não funcional (com métrica) | Categoria |
-| --- | --- | --- |
-| RNF-G04-01 | Reserva confirmada em ≤ 2 s no pico de 20 req/min | desempenho |
-| RNF-G04-02 | Zero reserva dupla em qualquer cenário de concorrência | consistência |
-| RNF-G04-03 | Painel de leitos com defasagem máxima de 30 s | desempenho |
-| RNF-G04-04 | Bloqueio sanitário visível em todos os pontos de consulta | usabilidade |
-| RNF-G04-05 | Histórico de ocupação disponível para indicadores (G6) | conformidade |
-
-> Estes requisitos são **sementes** extraídas do contexto. O grupo deve
-> refiná-los, dividir os compostos e acrescentar o que a análise revelar.
-> Requisito copiado sem análise perde nota em profundidade.
-
-## Eventos que o módulo publica para G06
-
-- `LEITO_RESERVADO`
-- `LEITO_NEGADO`
-- `LEITO_BLOQUEADO`
-
-## Riscos de modelagem conhecidos
-
-- tratar leito como quantidade ("4 vagos") em vez de entidade com estado.
-- ignorar expiração de reserva (leito fica preso).
-- permitir bloqueio sem autor e motivo.
+### Perguntas em aberto
+- Qual setor atende qual faixa de prioridade? (regra de seleção de setor)
+- Se o setor requerido estiver lotado, o sistema só **sugere** outro setor ou reserva sozinho?
+- Quem confirma a "ciência" do alerta na porta (enfermagem do setor ou recepção)?
 
 ## Estado da entrega
 
 | Artefato | M1 (Aula 18) | M2 (Aula 24) | M3 (Aula 27) |
 | --- | --- | --- | --- |
-| E1 Visão e escopo | pendente | — | — |
-| E2 Catálogo RF/RNF | pendente | — | — |
-| E3 Casos de uso | pendente | — | — |
+| E1 Visão e escopo | entregue (v1.0) | — | — |
+| E2 Catálogo RF/RNF | entregue (v1.0) | — | — |
+| E3 Casos de uso | entregue (v1.0) | — | — |
 | E4 Classes + dicionário | — | pendente | — |
 | E5 Sequência + estados | — | pendente | — |
 | E6 ADRs, matriz e testes | — | parcial | pendente |
 | E7 Protótipos + relatório | — | — | pendente |
 
-Atualize esta tabela a cada PR: é o primeiro lugar onde o professor olha.
-
-## Como rodar a validação local
-
-```bash
-python3 scripts/check_entrega.py --grupo grupo-04-leitos-criticos
-```
-
-## Estrutura da pasta
-
-```text
-grupo-04-leitos-criticos/
-├── README.md                  ← este arquivo (escopo, requisitos, estado)
-├── matriz-rastreabilidade.md  ← RF → UC → Classe → Sequência → CT
-├── casos-de-uso/              ← UC-G0X-NN-*.md
-├── diagramas/                 ← fonte (.puml/.drawio/.bpmn) + export (.png/.svg)
-├── prototipos/                ← wireframes (fonte + imagem)
-├── adr/                       ← ADR-G0X-NN-*.md
-└── testes/                    ← CT-G0X-NN-*.md
-```
+## Relatório técnico
+_(a ser elaborado no M3)_

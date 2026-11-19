@@ -1,0 +1,46 @@
+@startuml uc-geral
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Módulo G3\n(Pré-Admissão)" as G3
+actor MedicoRegulador
+actor EquipeReceptora
+actor "Temporizador" as TMR
+actor "Módulo G6\n(Auditoria)" as G6
+
+rectangle "G4 · Leitos Críticos e Reserva" {
+  usecase "UC-G04-01\nConsultar Disponibilidade" as UC01
+  usecase "UC-G04-02\nReservar Leito" as UC02
+  usecase "UC-G04-03\nVerificar Conflito de Reserva" as UC03
+  usecase "UC-G04-04\nNegar Reserva por\nIndisponibilidade" as UC04
+  usecase "UC-G04-05\nOcupar Leito\n(aceite na porta)" as UC05
+  usecase "UC-G04-06\nCancelar Reserva" as UC06
+  usecase "UC-G04-07\nExpirar Reserva" as UC07
+  usecase "UC-G04-08\nLiberar Leito" as UC08
+  usecase "UC-G04-09\nBloquear Leito" as UC09
+  usecase "UC-G04-10\nDesbloquear Leito" as UC10
+}
+
+G3 --> UC02
+MedicoRegulador --> UC01
+MedicoRegulador --> UC06
+EquipeReceptora --> UC01
+EquipeReceptora --> UC05
+EquipeReceptora --> UC06
+EquipeReceptora --> UC08
+EquipeReceptora --> UC09
+EquipeReceptora --> UC10
+TMR --> UC07
+
+UC02 ..> UC03 : <<include>>
+UC04 ..> UC02 : <<extend>>
+
+UC02 --> G6
+UC05 --> G6
+UC09 --> G6
+
+note bottom of G6
+  RF-G04-12: todo caso de uso que muda
+  estado emite evento ao G6.
+end note
+@enduml
