@@ -1,0 +1,46 @@
+@startuml estados-leito
+skinparam shadowing false
+skinparam state {
+  BackgroundColor White
+  BorderColor #333333
+}
+
+title Máquina de Estados — Ciclo de Vida do Leito (G4 · Leitos Críticos)
+
+[*] --> Vago : cadastro de leito ativo
+
+state Vago
+state Reservado
+state Ocupado
+state EmHigienizacao as "Em Higienização"
+state Bloqueado
+
+Vago --> Reservado : reservar()\n[UC-G04-02 / sem conflito RN-05]
+Reservado --> Ocupado : confirmarChegada()\n[UC-G04-05 / reserva ATIVA]
+Reservado --> Vago : cancelarReserva() [UC-G04-06]\nou expirarReserva() [UC-G04-07]
+
+Ocupado --> EmHigienizacao : liberarLeito()\n[UC-G04-08 / alta ou transferência]
+EmHigienizacao --> Vago : concluirHigienizacao(APROVADA)\n[UC-G04-08 / RN-06]
+
+Vago --> Bloqueado : bloquear(motivo)\n[UC-G04-09 / estado_origem = Vago]
+Reservado --> Bloqueado : bloquear(motivo)\n[UC-G04-09 A1 / cancela reserva + notifica G3]
+EmHigienizacao --> Bloqueado : reprovarHigienizacao() ou bloquear(motivo)\n[UC-G04-08 / UC-G04-09 A2 / estado_origem = EmHigienizacao]
+
+Bloqueado --> Vago : desbloquear()\n[UC-G04-10 / estado_origem in {Vago, Reservado}]
+Bloqueado --> EmHigienizacao : desbloquear()\n[UC-G04-10 / estado_origem == EmHigienizacao]
+
+note right of Ocupado
+  Restrição (UC-G04-09 E1):
+  Leito Ocupado NÃO transita diretamente
+  para Bloqueado nem para Vago.
+  Exige liberação prévia para Em Higienização.
+end note
+
+note bottom of EmHigienizacao
+  Restrição (RN-06):
+  Leitos em Em Higienização ou Bloqueado
+  nunca são ofertados na consulta (UC-G04-01).
+  Toda transição emite evento ao G6 (RF-G04-12).
+end note
+
+@enduml

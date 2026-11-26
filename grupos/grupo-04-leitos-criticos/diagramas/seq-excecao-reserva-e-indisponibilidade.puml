@@ -1,0 +1,66 @@
+@startuml seq-excecao-reserva-e-indisponibilidade
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+title DS-G04-02 — Exceções: Concorrência (UC-G04-04) e Indisponibilidade do G6 (E4)
+
+participant "Módulo G3\n(Pedido A - VERMELHO)" as G3A
+participant "Módulo G3\n(Pedido B - LARANJA)" as G3B
+participant "ServicoReserva\n(G4)" as SRV
+participant "Leito SV-01\n(último vago)" as LEITO
+participant "ReservaLeito" as RES
+participant "Fila EventoPendenteG6\n(C5)" as FILA
+participant "Módulo G6\n(Auditoria)" as G6
+
+== Cenário 1: Concorrência no último leito vago (RN-05 / RNF-G04-02) ==
+
+G3A -> SRV : pedido_pre_admissao(chamado_A, SALA_VERMELHA)
+G3B -> SRV : pedido_pre_admissao(chamado_B, SALA_VERMELHA)
+activate SRV
+
+group Transação A (adquire trava em SV-01)
+  SRV -> LEITO : verificarConflito(SV-01) [UC-G04-03]
+  activate LEITO
+  LEITO --> SRV : VAGO (sem reserva ativa)
+  SRV -> RES : criarReserva(chamado_A, SV-01, ATIVA)
+  SRV -> LEITO : reservar() [VAGO -> RESERVADO]
+  LEITO --> SRV : ok
+  deactivate LEITO
+end
+
+SRV -> FILA : enfileirarEvento(LEITO_RESERVADO, chamado_A, SUCESSO)
+SRV --> G3A : resposta(RESERVADO, leito_id=SV-01, expira_em)
+
+group Transação B (detecta conflito e aciona UC-G04-04)
+  SRV -> LEITO : verificarConflito(SV-01) [UC-G04-03]
+  activate LEITO
+  LEITO --> SRV : CONFLITO (estado == RESERVADO)
+  deactivate LEITO
+  SRV -> SRV : buscarOutroLeitoVago(SALA_VERMELHA) -> vazio
+  SRV -> FILA : enfileirarEvento(LEITO_NEGADO, chamado_B,\nresultado=NEGADO, justificativa="LEITO_INDISPONIVEL")
+  SRV --> G3B : resposta(NEGADO, motivo="LEITO_INDISPONIVEL")
+end
+deactivate SRV
+
+== Cenário 2: Indisponibilidade do G6 (Exceção E4 / RNF-G04-04) ==
+
+FILA ->> G6 : enviarEventoSensivel(C5: LEITO_RESERVADO)
+activate FILA
+G6 --x FILA : timeout / indisponível
+note right of FILA
+  Falha do G6 NÃO desfaz nem bloqueia
+  a reserva já confirmada ao G3 (ADR-G04-02).
+  Evento permanece com enviado = false.
+end note
+
+... nova tentativa assíncrona (reenvio) ...
+
+FILA ->> G6 : reenviarEventoSensivel(mesmo evento_id, ocorrido_em original)
+activate G6
+G6 -->> FILA : ack (idempotente por evento_id)
+deactivate G6
+FILA -> FILA : marcarEnviado()
+deactivate FILA
+
+@enduml

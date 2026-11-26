@@ -1,0 +1,51 @@
+@startuml atividades-reserva-leito
+skinparam shadowing false
+
+title Diagrama de Atividades — Fluxo de Decisão da Reserva de Leito (UC-G04-02)
+
+start
+:Receber pedido_pre_admissao (C3)\n[chamado_id, prontuario_id, prioridade, necessidade, eta_hospital];
+
+if (Campos obrigatórios válidos?) then (não)
+  :Rejeitar pedido com erro de validação (E1);
+  stop
+else (sim)
+endif
+
+if (Já existe ReservaLeito ATIVA\npara chamado_id?) then (sim)
+  :Retornar reserva ativa existente (A3 - idempotência);
+  stop
+else (não)
+endif
+
+:Consultar leitos VAGOS no setor compatível (necessidade);
+
+repeat
+  if (Existe leito VAGO na lista?) then (não)
+    if (Outro setor crítico possui vaga?) then (sim)
+      :Negar reserva no setor requerido\ne sugerir setor alternativo ao MedicoRegulador (A4);
+    else (não)
+      :Executar UC-G04-04 Negar Reserva\n(motivo: LEITO_INDISPONIVEL);
+    endif
+    :Enfileirar evento LEITO_NEGADO ao G6 (C5);
+    :Responder NEGADO ao G3;
+    stop
+  else (sim)
+    :Selecionar próximo leito vago\n(critério determinístico ADR-G04-01);
+    :Executar UC-G04-03 Verificar Conflito\ncom trava transacional (RN-05);
+  endif
+repeat while (Conflito detectado no leito?) is (sim - A2) not (não)
+
+:Calcular expira_em (ADR-G04-01);
+:Persistir ReservaLeito (ATIVA) e\nmudar Leito para RESERVADO (operação atômica);
+
+fork
+  :Emitir AlertaTransferencia (PENDENTE)\nno painel da EquipeReceptora;
+fork again
+  :Responder RESERVADO ao G3\n(leito_id, setor, expira_em);
+fork again
+  :Enfileirar evento LEITO_RESERVADO\npara envio assíncrono ao G6 (ADR-G04-02);
+end fork
+
+stop
+@enduml

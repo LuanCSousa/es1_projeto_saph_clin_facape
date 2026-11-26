@@ -1,0 +1,63 @@
+@startuml seq-ciclo-ocupacao-bloqueio
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+title DS-G04-03 — Ocupação, Liberação/Higienização e Bloqueio com Reserva (UC-G04-05, 08, 09)
+
+actor "EquipeReceptora" as EQ
+participant "ServicoLeito\n(G4)" as SRV
+participant "Leito" as LEITO
+participant "ReservaLeito" as RES
+participant "Higienizacao" as HIG
+participant "BloqueioLeito" as BLQ
+participant "Módulo G3 /\nMedicoRegulador" as G3
+participant "Fila EventoPendenteG6\n(C5)" as FILA
+
+== Fluxo 1: Aceite na porta e Ocupação (UC-G04-05) ==
+EQ -> SRV : confirmarChegada(reserva_id, responsavel_id)
+activate SRV
+SRV -> RES : verificarAtiva(reserva_id)
+RES --> SRV : ATIVA
+SRV -> RES : confirmarOcupacao(responsavel_id) [ATIVA -> CONCLUIDA]
+SRV -> LEITO : ocupar(responsavel_id) [RESERVADO -> OCUPADO]
+SRV -> FILA : enfileirarEvento(LEITO_OCUPADO, SUCESSO)
+SRV --> EQ : ocupacaoConfirmada()
+deactivate SRV
+
+== Fluxo 2: Liberação e Higienização (UC-G04-08) ==
+EQ -> SRV : liberarLeito(leito_id, responsavel_id)
+activate SRV
+SRV -> LEITO : liberarParaHigienizacao(responsavel_id) [OCUPADO -> EM_HIGIENIZACAO]
+SRV -> HIG : criar(leito_id, EM_ANDAMENTO, responsavel_id)
+SRV -> FILA : enfileirarEvento(LEITO_EM_HIGIENIZACAO, SUCESSO)
+SRV --> EQ : aguardandoHigienizacao()
+deactivate SRV
+
+EQ -> SRV : registrarHigienizacao(higienizacao_id, APROVADA)
+activate SRV
+SRV -> HIG : concluir(APROVADA)
+SRV -> LEITO : concluirHigienizacao(APROVADA) [EM_HIGIENIZACAO -> VAGO]
+SRV -> FILA : enfileirarEvento(LEITO_LIBERADO, SUCESSO)
+SRV --> EQ : leitoVago()
+deactivate SRV
+
+== Fluxo 3: Bloqueio de Leito com Reserva Ativa (UC-G04-09 A1 / ADR-G04-03) ==
+EQ -> SRV : bloquearLeito(leito_id, RISCO_SANITARIO, responsavel_id)
+activate SRV
+SRV -> LEITO : verificarEstado()
+alt Leito em estado OCUPADO (Exceção E1)
+  LEITO --> SRV : OCUPADO
+  SRV --> EQ : erro("Libere o leito antes de bloquear")
+else Leito em estado RESERVADO (Alternativo A1)
+  LEITO --> SRV : RESERVADO
+  SRV -> RES : cancelar(motivo="LEITO_BLOQUEADO", responsavel_id) [UC-G04-06]
+  SRV -> BLQ : criar(leito_id, RISCO_SANITARIO, estado_origem=RESERVADO)
+  SRV -> LEITO : bloquear() [RESERVADO -> BLOQUEADO]
+  SRV ->> G3 : notificarCancelamentoReserva(chamado_id, "LEITO_BLOQUEADO")
+  SRV -> FILA : enfileirarEvento(LEITO_BLOQUEADO, SUCESSO, justificativa)
+  SRV --> EQ : leitoBloqueadoEReservaCancelada()
+end
+deactivate SRV
+
+@enduml

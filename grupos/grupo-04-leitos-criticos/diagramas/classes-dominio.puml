@@ -1,0 +1,191 @@
+@startuml classes-dominio
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam shadowing false
+hide empty members
+
+title Diagrama de Classes de Domínio — G4 · Leitos Críticos e Reserva
+
+package "G4 · Leitos Críticos e Reserva" {
+
+  enum TipoSetor {
+    SALA_VERMELHA
+    OBSERVACAO
+  }
+
+  enum EstadoLeito {
+    VAGO
+    RESERVADO
+    OCUPADO
+    EM_HIGIENIZACAO
+    BLOQUEADO
+  }
+
+  enum EstadoReserva {
+    ATIVA
+    CONCLUIDA
+    CANCELADA
+    EXPIRADA
+  }
+
+  enum EstadoAlerta {
+    PENDENTE
+    CIENTE
+    ENCERRADO
+  }
+
+  enum ResultadoHigienizacao {
+    EM_ANDAMENTO
+    APROVADA
+    REPROVADA
+  }
+
+  enum MotivoBloqueio {
+    MANUTENCAO
+    RISCO_SANITARIO
+    FALTA_EQUIPAMENTO
+    OUTRO
+  }
+
+  enum PrioridadeManchester {
+    VERMELHO
+    LARANJA
+    AMARELO
+    VERDE
+    AZUL
+  }
+
+  class Setor {
+    + setor_id : UUID
+    + nome : String
+    + tipo : TipoSetor
+    + capacidade : Integer
+    + ativo : Boolean
+    --
+    + listarLeitosVagos() : List<Leito>
+    + calcularTaxaOcupacao() : Decimal
+  }
+
+  class Leito {
+    + leito_id : UUID
+    + codigo : String
+    + estado : EstadoLeito
+    + estado_anterior : EstadoLeito [0..1]
+    + atualizado_em : DateTime
+    --
+    + estaDisponivel() : Boolean
+    + reservar() : void
+    + ocupar(responsavel_id : UUID) : void
+    + liberarParaHigienizacao(responsavel_id : UUID) : Higienizacao
+    + concluirHigienizacao(resultado : ResultadoHigienizacao) : void
+    + bloquear(motivo : MotivoBloqueio, descricao : String, responsavel_id : UUID) : BloqueioLeito
+    + desbloquear(responsavel_id : UUID) : void
+  }
+
+  class ReservaLeito {
+    + reserva_id : UUID
+    + chamado_id : UUID {ref G1}
+    + prontuario_id : UUID {ref G3}
+    + prioridade : PrioridadeManchester
+    + estado : EstadoReserva
+    + criada_em : DateTime
+    + expira_em : DateTime
+    + encerrada_em : DateTime [0..1]
+    + motivo_encerramento : String [0..1]
+    + responsavel_id : UUID [0..1]
+    --
+    + estaAtiva() : Boolean
+    + confirmarOcupacao(responsavel_id : UUID) : void
+    + cancelar(motivo : String, responsavel_id : UUID) : void
+    + expirar(agora : DateTime) : void
+  }
+
+  class AlertaTransferencia {
+    + alerta_id : UUID
+    + chamado_id : UUID {ref G1}
+    + prioridade : PrioridadeManchester
+    + estado : EstadoAlerta
+    + emitido_em : DateTime
+    + ciente_em : DateTime [0..1]
+    + ciente_por : UUID [0..1]
+    --
+    + registrarCiencia(responsavel_id : UUID) : void
+    + encerrar() : void
+  }
+
+  class Higienizacao {
+    + higienizacao_id : UUID
+    + iniciada_em : DateTime
+    + concluida_em : DateTime [0..1]
+    + resultado : ResultadoHigienizacao
+    + responsavel_id : UUID
+    + observacao : String [0..1]
+    --
+    + concluir(resultado : ResultadoHigienizacao, observacao : String) : void
+  }
+
+  class BloqueioLeito {
+    + bloqueio_id : UUID
+    + motivo : MotivoBloqueio
+    + descricao : String [0..1]
+    + estado_origem : EstadoLeito
+    + bloqueado_por : UUID
+    + bloqueado_em : DateTime
+    + desbloqueado_por : UUID [0..1]
+    + desbloqueado_em : DateTime [0..1]
+    --
+    + encerrar(responsavel_id : UUID) : void
+  }
+
+  class ParametroOperacional {
+    + chave : String
+    + valor : String
+    + descricao : String
+    + atualizado_em : DateTime
+    + atualizado_por : UUID
+    --
+    + obterPrazoExpiracaoMin() : Integer
+    + obterMargemEtaMin() : Integer
+  }
+
+  class EventoPendenteG6 {
+    + evento_id : UUID
+    + tipo : String
+    + ator_id : UUID
+    + papel : String
+    + entidade : String
+    + entidade_id : UUID
+    + ocorrido_em : DateTime
+    + resultado : String
+    + justificativa : String [0..1]
+    + enviado : Boolean
+    --
+    + marcarEnviado() : void
+  }
+}
+
+Setor "1" *-- "1..*" Leito : contém >
+Leito "1" -- "0..*" ReservaLeito : alocado em >
+ReservaLeito "1" -- "0..1" AlertaTransferencia : dispara >
+Setor "1" -- "0..*" AlertaTransferencia : exibido em >
+Leito "1" -- "0..*" Higienizacao : passa por >
+Leito "1" -- "0..*" BloqueioLeito : sofre >
+ReservaLeito ..> ParametroOperacional : consulta prazo
+BloqueioLeito ..> ParametroOperacional : consulta motivos
+Leito ..> EventoPendenteG6 : gera evento C5
+ReservaLeito ..> EventoPendenteG6 : gera evento C5
+
+note right of ReservaLeito
+  Restrições de domínio (RN-05 e RNF-G04-06):
+  - No máximo 1 ReservaLeito ATIVA por Leito.
+  - No máximo 1 ReservaLeito ATIVA por chamado_id.
+  - Não armazena dados clínicos nem pessoais
+    (apenas chamado_id, prontuario_id e prioridade).
+end note
+
+note bottom of EventoPendenteG6
+  Fila de saída para contrato C5 (ADR-G04-02).
+  Não substitui a trilha de auditoria do G6.
+end note
+
+@enduml

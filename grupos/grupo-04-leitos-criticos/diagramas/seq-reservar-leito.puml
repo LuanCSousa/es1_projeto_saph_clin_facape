@@ -1,0 +1,69 @@
+@startuml seq-reservar-leito
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+title DS-G04-01 — Fluxo Principal: Reservar Leito (UC-G04-02 + UC-G04-03)
+
+participant "Módulo G3\n(Pré-Admissão)" as G3
+participant "ServicoReserva\n(G4)" as SRV
+participant "Setor / Leito" as LEITO
+participant "ReservaLeito" as RES
+participant "ParametroOperacional" as PARAM
+participant "AlertaTransferencia\n(Painel Setor)" as ALERTA
+actor "EquipeReceptora" as EQ
+participant "Fila EventoPendenteG6\n(C5)" as FILA
+participant "Módulo G6\n(Auditoria)" as G6
+
+G3 -> SRV : pedido_pre_admissao(chamado_id, prontuario_id,\nprioridade, necessidade, eta_hospital)
+activate SRV
+
+SRV -> SRV : validarCamposObrigatorios()
+SRV -> RES : buscarReservaAtivaPorChamado(chamado_id)
+activate RES
+RES --> SRV : nenhuma reserva ativa
+deactivate RES
+
+SRV -> LEITO : listarLeitosVagos(necessidade)
+activate LEITO
+LEITO --> SRV : [SV-01, SV-02] (ordenados por maior tempo vago)
+deactivate LEITO
+
+SRV -> PARAM : obterPrazoExpiracao(eta_hospital)
+activate PARAM
+PARAM --> SRV : expira_em = agora + eta_hospital + margem_eta
+deactivate PARAM
+
+group Operação Atômica · UC-G04-03 Verificar Conflito (RN-05)
+  SRV -> LEITO : verificarConflitoEBloquearTransacao(SV-01)
+  activate LEITO
+  LEITO --> SRV : sem conflito (estado == VAGO)
+  SRV -> RES : criar(chamado_id, prontuario_id, SV-01,\nprioridade, expira_em, estado=ATIVA)
+  activate RES
+  RES --> SRV : reserva_id
+  deactivate RES
+  SRV -> LEITO : reservar() [VAGO -> RESERVADO]
+  LEITO --> SRV : ok
+  deactivate LEITO
+end
+
+SRV -> ALERTA : emitir(reserva_id, chamado_id, prioridade, setor, SV-01)
+activate ALERTA
+ALERTA --> EQ : exibirAlertaNoPainel(PENDENTE)
+ALERTA --> SRV : alerta_id (p95 <= 5 s)
+deactivate ALERTA
+
+SRV -> FILA : enfileirarEvento(LEITO_RESERVADO, reserva_id, SUCESSO)
+activate FILA
+FILA --> SRV : enfileirado
+deactivate FILA
+
+SRV --> G3 : resposta(RESERVADO, leito_id=SV-01, setor, expira_em)
+deactivate SRV
+
+FILA ->> G6 : enviarEventoSensivel(C5: LEITO_RESERVADO)
+activate G6
+G6 -->> FILA : ack (marcarEnviado = true)
+deactivate G6
+
+@enduml
